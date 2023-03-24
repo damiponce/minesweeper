@@ -4,11 +4,13 @@ import PrismaZoom from 'react-prismazoom';
 import * as lib from './components/lib';
 import { useContainerDimensions } from './components/lib';
 import { svgs } from './components/svgs';
+import { useHookstate } from '@hookstate/core';
+var lodash = require('lodash');
 
-const WIDTH = 15;
-const HEIGHT = 15;
+const WIDTH = 10;
+const HEIGHT = 10;
 const SCALE = 0.5;
-const PERCENTAGE = 0.3; //0.3
+const PERCENTAGE = 0.2; //0.3
 const NBOMBS = Math.round(WIDTH * HEIGHT * PERCENTAGE); // 20% of WIDTH * HEIGHT
 
 // const BOMBS = Array.from({ length: WIDTH }, () =>
@@ -41,12 +43,16 @@ const _borders = Array.from({ length: HEIGHT }, () =>
 // console.log(_status);
 
 function App() {
-    const [bombs, setBombs] = React.useState(_bombs);
-    const [neighbors, setNeighbors] = React.useState(_neighbors);
-    const [statuses, setStatuses] = React.useState(_status);
-    const [generated, setGenerated] = React.useState(false);
+    // const [bombs, setBombs] = React.useState(_bombs);
+    const bombs = useHookstate(_bombs);
+    // const [neighbors, setNeighbors] = React.useState(_neighbors);
+    const neighbors = useHookstate(_neighbors);
+    // const [statuses, setStatuses] = React.useState(_status);
+    const statuses = useHookstate(_status);
+    // const [generated, setGenerated] = React.useState(false);
+    const generated = useHookstate(false);
     const borders = React.useMemo(() => {
-        statuses.map((row, y) =>
+        statuses.get().map((row, y) =>
             row?.map((status, x) => {
                 // let color = {
                 //     hidden: '#41A3CD',
@@ -55,7 +61,7 @@ function App() {
                 // }[status];
 
                 const equal = (x: number, y: number) =>
-                    statuses[y][x] === status;
+                    statuses[y][x].get() === status;
 
                 var equalsAround = [];
 
@@ -68,7 +74,7 @@ function App() {
                             y + j < HEIGHT &&
                             !(i === 0 && j === 0)
                         ) {
-                            if (statuses[y + j][x + i] === status)
+                            if (statuses[y + j][x + i].get() === status)
                                 switch ([i, j].join(' ')) {
                                     case '-1 -1':
                                         if (
@@ -109,7 +115,7 @@ function App() {
             }),
         );
         return _borders;
-    }, [statuses]);
+    }, [statuses.get()]);
     const cleared = React.useRef<{ x: number; y: number }[]>([
         { x: -1, y: -1 },
     ]);
@@ -127,21 +133,121 @@ function App() {
     ) => {
         e.preventDefault();
         // console.warn('click', x, y);
-        if (!generated) {
+        if (!generated.get()) {
             if (e.button === 0) {
-                handleFirstClick(x, y);
-                if (neighbors[y][x] === 0) clearBlank(x, y);
-                else revealCell(x, y);
+                let startStatuses: lib.SGrid = [];
+                while (true) {
+                    // console.log(bombs.get());
+                    // console.log(neighbors.get());
+                    // console.log(statuses.get());
+
+                    // console.error(statuses.get());
+                    // console.error(startStatuses);
+                    handleFirstClick(x, y);
+                    if (neighbors[y][x].get() === 0) clearBlank(x, y);
+                    else revealCell(x, y);
+                    // startStatuses = JSON.parse(JSON.stringify(statuses.value));
+
+                    var solverBombs: lib.Grid = lodash.cloneDeep(bombs.get());
+
+                    var solverNeighbors: lib.NGrid = lodash.cloneDeep(
+                        neighbors.get(),
+                    );
+
+                    var solverStatuses: lib.SGrid = lodash.cloneDeep(
+                        statuses.get(),
+                    );
+
+                    startStatuses = lodash.cloneDeep(solverStatuses);
+
+                    // console.warn(solverBombs);
+                    // console.warn(solverNeighbors);
+                    // console.warn(solverStatuses);
+                    /* =====  SOLVER  ===== */
+                    // setTimeout(() => {
+                    var solverOutput = {
+                        bombs: [{ x: 0, y: 0 }],
+                        safe: [{ x: 0, y: 0 }],
+                    };
+                    while (
+                        solverOutput.bombs.length > 0 ||
+                        solverOutput.safe.length > 0
+                    ) {
+                        solverOutput.bombs = [];
+                        solverOutput.safe = [];
+                        solverOutput = lib.solver(
+                            [WIDTH, HEIGHT],
+                            // bombs.get() as lib.Grid,
+                            // JSON.parse(JSON.stringify(neighbors.value)),
+                            // statuses.get() as lib.SGrid,
+                            solverBombs,
+                            solverNeighbors,
+                            solverStatuses,
+                        );
+                        // solverOutput.bombs.forEach((e) => toggleFlag(e.x, e.y));
+                        // solverOutput.safe.forEach((e) => revealCell(e.x, e.y));
+
+                        solverOutput.bombs.forEach(
+                            (e) => (solverStatuses[e.y][e.x] = 'flagged'),
+                        );
+                        solverOutput.safe.forEach(
+                            (e) => (solverStatuses[e.y][e.x] = 'revealed'),
+                        );
+                    }
+                    // }, 0);
+                    /* =====  SOLVER  ===== */
+                    // console.error(statuses.value);
+                    // console.error(startStatuses);
+
+                    var wrong: number = 0;
+                    solverBombs.map((e, y) =>
+                        e.map((e, x) => {
+                            if (
+                                e === true &&
+                                solverStatuses[y][x] === 'revealed'
+                            ) {
+                                wrong += 1;
+                            }
+                        }),
+                    );
+                    console.error(
+                        'Any hidden: ',
+                        solverStatuses.flat().includes('hidden'),
+                        '  Any bombs revealed:',
+                        !!wrong,
+                    );
+                    // break;
+                    // debugger;
+                    if (!solverStatuses.flat().includes('hidden') && !wrong) {
+                        statuses.set(startStatuses);
+                        break;
+                    }
+                }
             }
         } else {
             if (e.button === 0) {
-                if (neighbors[y][x] === 0) clearBlank(x, y);
+                if (neighbors[y][x].get() === 0) clearBlank(x, y);
                 else revealCell(x, y);
             } else if (e.button === 2) {
                 toggleFlag(x, y);
             }
         }
     };
+
+    React.useEffect(() => {
+        console.log('BOMBS CHANGED');
+        console.table(bombs.get());
+    }, [bombs]);
+
+    React.useEffect(() => {
+        console.log('NEIGHBORS CHANGED');
+        console.table(neighbors.get());
+    }, [neighbors]);
+
+    React.useEffect(() => {
+        console.log('STATUSES CHANGED');
+        console.table(statuses.get());
+    }, [statuses]);
 
     const handleMouseDown = (
         x: number,
@@ -167,24 +273,36 @@ function App() {
         }
     };
 
+    // function toggleFlag(x: number, y: number) {
+    //     let tempStatus = [...statuses];
+    //     if (tempStatus[y][x] === 'flagged') tempStatus[y][x] = 'hidden';
+    //     else if (tempStatus[y][x] === 'hidden') tempStatus[y][x] = 'flagged';
+    //     setStatuses(tempStatus);
+    // }
+
     function toggleFlag(x: number, y: number) {
-        let tempStatus = [...statuses];
-        if (tempStatus[y][x] === 'flagged') tempStatus[y][x] = 'hidden';
-        else if (tempStatus[y][x] === 'hidden') tempStatus[y][x] = 'flagged';
-        setStatuses(tempStatus);
+        if (statuses[y][x].get() === 'flagged') statuses[y][x].set('hidden');
+        else if (statuses[y][x].get() === 'hidden')
+            statuses[y][x].set('flagged');
     }
 
+    // function revealCell(x: number, y: number) {
+    //     let tempStatus = [...statuses];
+    //     if (tempStatus[y][x] === 'hidden') {
+    //         tempStatus[y][x] = 'revealed';
+    //         setStatuses(tempStatus);
+    //     }
+    // }
+
     function revealCell(x: number, y: number) {
-        let tempStatus = [...statuses];
-        if (tempStatus[y][x] === 'hidden') {
-            tempStatus[y][x] = 'revealed';
-            setStatuses(tempStatus);
+        if (statuses[y][x].get() === 'hidden') {
+            statuses[y][x].set('revealed');
         }
     }
 
     function clearBlank(x: number, y: number) {
         if (
-            neighbors[y][x] !== 0 ||
+            neighbors[y][x].get() !== 0 ||
             cleared.current.find((e) => e.x === x && e.y === y)
         )
             return;
@@ -192,8 +310,27 @@ function App() {
         checkSurroundings(x, y).forEach(({ x, y }) => clearBlank(x, y));
     }
 
+    // function clearAround(x: number, y: number) {
+    //     let tempStatus = [...statuses];
+    //     for (var i = -1; i <= 1; i++) {
+    //         for (var j = -1; j <= 1; j++) {
+    //             if (
+    //                 x + i >= 0 &&
+    //                 x + i < WIDTH &&
+    //                 y + j >= 0 &&
+    //                 y + j < HEIGHT
+    //             ) {
+    //                 if (tempStatus[y + j][x + i] === 'hidden')
+    //                     tempStatus[y + j][x + i] = 'revealed';
+    //             }
+    //         }
+    //     }
+    //     setStatuses(tempStatus);
+    //     if (!cleared.current.find((e) => e.x === x && e.y === y))
+    //         cleared.current.push({ x: x, y: y });
+    // }
+
     function clearAround(x: number, y: number) {
-        let tempStatus = [...statuses];
         for (var i = -1; i <= 1; i++) {
             for (var j = -1; j <= 1; j++) {
                 if (
@@ -202,12 +339,11 @@ function App() {
                     y + j >= 0 &&
                     y + j < HEIGHT
                 ) {
-                    if (tempStatus[y + j][x + i] === 'hidden')
-                        tempStatus[y + j][x + i] = 'revealed';
+                    if (statuses[y + j][x + i].get() === 'hidden')
+                        statuses[y + j][x + i].set('revealed');
                 }
             }
         }
-        setStatuses(tempStatus);
         if (!cleared.current.find((e) => e.x === x && e.y === y))
             cleared.current.push({ x: x, y: y });
     }
@@ -225,7 +361,10 @@ function App() {
                     y + j >= 0 &&
                     y + j < HEIGHT
                 ) {
-                    if (neighbors[y + j][x + i] === 0 && (i !== 0 || j !== 0))
+                    if (
+                        neighbors[y + j][x + i].get() === 0 &&
+                        (i !== 0 || j !== 0)
+                    )
                         emptyCells.push({ x: x + i, y: y + j });
                 }
             }
@@ -234,13 +373,24 @@ function App() {
     }
 
     const handleFirstClick = (x: number, y: number) => {
+        console.log('handleFirstClick');
+        bombs.set(_bombs);
+        neighbors.set(_neighbors);
+        statuses.set(_status);
+
+        // var _ = bombs;
+        // var __ = neighbors;
+        // var ___ = statuses;
+
+        // debugger;
+
         var tempBombArr = Array.from({ length: WIDTH * HEIGHT }, (_, i) =>
             i < NBOMBS ? true : false,
         );
 
         let pass = false;
 
-        var neigh = [...neighbors];
+        var neigh = JSON.parse(JSON.stringify(neighbors.value));
         while (!pass) {
             var tempBombs = lib.unlinealiseGrid(lib.shuffle(tempBombArr), [
                 WIDTH,
@@ -249,7 +399,7 @@ function App() {
             // console.log('temp -> neigh');
             // console.log(tempBombs);
             // console.log(neigh);
-            setBombs(tempBombs);
+            bombs.set(tempBombs);
             for (var m = 0; m < WIDTH; m++) {
                 for (var n = 0; n < HEIGHT; n++) {
                     var sum = 0;
@@ -278,46 +428,14 @@ function App() {
                 pass = true;
             }
         }
-        setNeighbors(neigh);
-        setGenerated(true);
+        neighbors.set(neigh);
+        generated.set(true);
 
-        //timeout 1 second
-        function sleep(milliseconds: number) {
-            const date = Date.now();
-            let currentDate = null;
-            do {
-                currentDate = Date.now();
-            } while (currentDate - date < milliseconds);
-        }
+        // var ____ = bombs;
+        // var _____ = neighbors;
+        // var ______ = statuses;
 
-        /*
-        {
-            setTimeout(() => {
-                var solverOutput = {
-                    bombs: [{ x: 0, y: 0 }],
-                    safe: [{ x: 0, y: 0 }],
-                };
-
-                while (
-                    solverOutput.bombs.length > 0 ||
-                    solverOutput.safe.length > 0
-                ) {
-                    solverOutput.bombs = [];
-                    solverOutput.safe = [];
-
-                    solverOutput = lib.solver(
-                        [WIDTH, HEIGHT],
-                        bombs,
-                        neighbors,
-                        statuses,
-                    );
-                    solverOutput.bombs.forEach((e) => toggleFlag(e.x, e.y));
-                    solverOutput.safe.forEach((e) => revealCell(e.x, e.y));
-                    sleep(1000);
-                }
-            }, 500);
-        }
-        */
+        // debugger;
     };
 
     React.useEffect(() => {
@@ -501,7 +619,7 @@ function App() {
                         transform: `scale3d(0.2,0.2,1)`,
                     }}
                 >
-                    {bombs?.map((row, y) =>
+                    {bombs.get().map((row, y) =>
                         row?.map((bomb, x) => (
                             <div
                                 key={`${x}-${y}`}
@@ -545,7 +663,7 @@ function App() {
                                                     hidden: '#41A3CD',
                                                     flagged: '#808F9E',
                                                     revealed: '#0000',
-                                                }[statuses[y][x]]
+                                                }[statuses[y][x].get()]
                                             }
                                         >
                                             {
@@ -593,12 +711,15 @@ function App() {
                                                             }}
                                                             fill='#ddd'
                                                         >
-                                                            {neighbors[y][x] >
-                                                                0 &&
-                                                                neighbors[y][x]}
+                                                            {neighbors[y][
+                                                                x
+                                                            ].get() > 0 &&
+                                                                neighbors[y][
+                                                                    x
+                                                                ].get()}
                                                         </text>
                                                     ),
-                                                }[statuses[y][x]]
+                                                }[statuses[y][x].get()]
                                             }
                                         </svg>
                                     </div>

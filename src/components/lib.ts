@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as vec from 'vectorious';
+var lodash = require('lodash');
 
 export type Grid = boolean[][];
 export type NGrid = number[][];
@@ -94,6 +95,14 @@ export function solver(
     var rowList: { x: number; y: number; n: { x: number; y: number }[] }[] = [];
     var rowNs: number[][] = [];
 
+    let _knownBombCols: number[] = [];
+    let _knownSafeCols: number[] = [];
+
+    let bombs: { x: number; y: number }[] = [];
+    let safe: { x: number; y: number }[] = [];
+
+    var neigh = lodash.cloneDeep(_neighbors);
+
     _statuses.map((_row, y) =>
         _row?.map((status, x) => {
             if (status === 'revealed' && _bombs[y][x] === false) {
@@ -109,13 +118,20 @@ export function solver(
                         ) {
                             if (_statuses[y + j][x + i] === 'hidden') {
                                 select.push({ x: x + i, y: y + j });
+                            } else if (_statuses[y + j][x + i] === 'flagged') {
+                                neigh[y][x] = neigh[y][x] - 1;
                             }
                         }
                     }
                 }
                 if (select.length > 0) {
                     rowList.push({ x, y, n: select });
-                    rowNs.push([_neighbors[y][x]]);
+                    rowNs.push([neigh[y][x]]);
+                }
+                if (neigh[y][x] === 0) {
+                    select.map(({ x, y }) => {
+                        safe.push({ x, y });
+                    });
                 }
             }
         }),
@@ -168,14 +184,19 @@ export function solver(
             }
         });
     });
+    // console.table(
+    //     new vec.NDArray(m, {
+    //         shape: [rowList.length, colList.length + 1],
+    //         dtype: 'int32',
+    //     })
+    //         .transpose()
+    //         .toArray(),
+    // );
 
     let finalM = new vec.NDArray(m, {
         shape: [rowList.length, colList.length + 1],
         dtype: 'int32',
     }).gauss();
-
-    let _knownBombCols: number[] = [];
-    let _knownSafeCols: number[] = [];
 
     finalM
         .toArray()
@@ -225,6 +246,18 @@ export function solver(
                         _knownSafeCols.push(e);
                     }
                 });
+            } else if (aug === 0 && ones.length > 0 && negOnes.length === 0) {
+                ones.map((e) => {
+                    if (!_knownSafeCols.includes(e)) {
+                        _knownSafeCols.push(e);
+                    }
+                });
+            } else if (aug === 0 && ones.length === 0 && negOnes.length > 0) {
+                negOnes.map((e) => {
+                    if (!_knownSafeCols.includes(e)) {
+                        _knownSafeCols.push(e);
+                    }
+                });
             }
         });
 
@@ -235,18 +268,30 @@ export function solver(
     // else if the augmented column value is equal to the maximum bound then
     //    All of the negative numbers in that row are not mines and all of the positive values in that row are mines.
 
-    console.table(finalM.transpose().toArray());
+    // console.table(finalM.transpose().toArray());
 
-    console.log('\n\nBombs');
-    console.table(_knownBombCols.map((e) => colList[e]));
-    console.log('Safe');
-    console.table(
-        _knownSafeCols.map((e) => colList[e]),
-        ['x', 'y'],
+    // console.log('\n\nBombs');
+    // console.table(_knownBombCols.map((e) => colList[e]));
+    // console.log('Safe');
+    // console.table(
+    //     _knownSafeCols.map((e) => colList[e]),
+    //     ['x', 'y'],
+    // );
+
+    bombs.push(..._knownBombCols.map((e) => colList[e]));
+    safe.push(
+        ..._knownSafeCols
+            .map((e) =>
+                safe.findIndex(
+                    (f) => f.x === colList[e].x && f.y === colList[e].y,
+                ) === -1
+                    ? colList[e]
+                    : { x: -69, y: -69 },
+            )
+            .filter((e) => e.x !== -69 && e.y !== -69),
     );
 
-    return {
-        bombs: _knownBombCols.map((e) => colList[e]),
-        safe: _knownSafeCols.map((e) => colList[e]),
-    };
+    console.log('finished');
+
+    return { bombs, safe };
 }
