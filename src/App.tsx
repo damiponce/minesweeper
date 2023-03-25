@@ -26,18 +26,27 @@ const _borders = lib.createGrid([WIDTH, HEIGHT], 'none');
 /*  ˄˄˄  INIT ARRAYS  ˄˄˄  */
 
 function App() {
+    const state = useHookstate({
+        bombs: _bombs,
+        neighbors: _neighbors,
+        statuses: _status,
+        generated: false,
+        cleared: [{ x: -1, y: -1 }],
+        hoveredCell: { x: 0, y: 0 },
+        clicking: false,
+        canvas: { posX: 0, posY: 0 },
+        lastCanvas: { posX: 0, posY: 0 },
+    });
     const bombs = useHookstate(_bombs);
     const neighbors = useHookstate(_neighbors);
     const statuses = useHookstate(_status);
     const generated = useHookstate(false);
-    const cleared = React.useRef<{ x: number; y: number }[]>([
-        { x: -1, y: -1 },
-    ]);
-    const [hoveredCell, setHoveredCell] = React.useState({ x: 0, y: 0 });
+    const cleared = useHookstate([{ x: -1, y: -1 }]);
+    const hoveredCell = useHookstate({ x: 0, y: 0 });
 
-    const clicking = React.useRef(false);
-    const canvas = React.useRef({ posX: 0, posY: 0 });
-    const lastCanvas = React.useRef({ posX: 0, posY: 0 });
+    const clicking = useHookstate(false);
+    const canvas = useHookstate({ posX: 0, posY: 0 });
+    const lastCanvas = useHookstate({ posX: 0, posY: 0 });
 
     const borders = React.useMemo(() => {
         statuses.get().map((row, y) =>
@@ -182,8 +191,8 @@ function App() {
         y: number,
         e: React.MouseEvent<HTMLDivElement, MouseEvent>,
     ) => {
-        clicking.current = true;
-        lastCanvas.current = canvas.current;
+        clicking.set(true);
+        lastCanvas.set(lodash.cloneDeep(canvas.get()));
     };
 
     const handleMouseUp = (
@@ -192,11 +201,11 @@ function App() {
         e: React.MouseEvent<HTMLDivElement, MouseEvent>,
     ) => {
         if (
-            clicking.current &&
-            canvas.current.posX === lastCanvas.current.posX &&
-            canvas.current.posY === lastCanvas.current.posY
+            clicking.get() &&
+            canvas.get().posX === lastCanvas.get().posX &&
+            canvas.get().posY === lastCanvas.get().posY
         ) {
-            clicking.current = false;
+            clicking.set(false);
             handleClick(x, y, e);
         }
     };
@@ -235,7 +244,7 @@ function App() {
         data?: { bombs: lib.Grid; neighbors: lib.NGrid; statuses: lib.SGrid },
     ) {
         let _data = data ? data.neighbors[y][x] : neighbors[y][x].get();
-        if (_data !== 0 || cleared.current.find((e) => e.x === x && e.y === y))
+        if (_data !== 0 || cleared.get().find((e) => e.x === x && e.y === y))
             return;
         clearAround(x, y, data);
         checkSurroundings(x, y, data).forEach(({ x, y }) =>
@@ -267,8 +276,8 @@ function App() {
                 }
             }
         }
-        if (!cleared.current.includes({ x: x, y: y })) {
-            cleared.current.push({ x: x, y: y });
+        if (!cleared.get().includes({ x: x, y: y })) {
+            cleared.merge([{ x: x, y: y }]);
         }
     }
 
@@ -300,7 +309,7 @@ function App() {
     }
 
     const handleFirstClick = (x: number, y: number) => {
-        cleared.current = [{ x: -1, y: -1 }];
+        cleared.set([{ x: -1, y: -1 }]);
 
         var tempBombArr = Array.from({ length: WIDTH * HEIGHT }, (_, i) =>
             i < NBOMBS ? true : false,
@@ -380,7 +389,8 @@ function App() {
                     position: 'absolute',
                     width: 80,
                     // height: 60,
-                    backgroundColor: '#f004',
+                    backgroundColor: 'red',
+                    opacity: 0.3,
                     zIndex: 2,
                     color: 'white',
                     textAlign: 'left',
@@ -388,14 +398,18 @@ function App() {
                     paddingBlock: 10,
                 }}
             >
-                <span>x: {hoveredCell.x !== -1 ? hoveredCell.x : '-'}</span>
+                <span>
+                    x: {hoveredCell.get().x !== -1 ? hoveredCell.get().x : '-'}
+                </span>
                 <br />
-                <span>y: {hoveredCell.y !== -1 ? hoveredCell.y : '-'}</span>
+                <span>
+                    y: {hoveredCell.get().y !== -1 ? hoveredCell.get().y : '-'}
+                </span>
                 <br />
                 <span>
                     b:{' '}
-                    {hoveredCell.x !== -1 && hoveredCell.y !== -1
-                        ? borders[hoveredCell.y][hoveredCell.x]
+                    {hoveredCell.get().x !== -1 && hoveredCell.get().y !== -1
+                        ? borders[hoveredCell.get().y][hoveredCell.get().x]
                         : '-'}
                 </span>
             </div>
@@ -414,7 +428,7 @@ function App() {
                 minZoom={1}
                 maxZoom={5}
                 onPanChange={(e) => {
-                    canvas.current = e;
+                    canvas.set(e);
                 }}
             >
                 <div
@@ -523,10 +537,10 @@ function App() {
                                 onMouseUp={(e) => handleMouseUp(x, y, e)}
                                 // onContextMenu={(e) => handleClick(x, y, e)}
                                 onMouseEnter={(e) =>
-                                    setHoveredCell({ x: x, y: y })
+                                    hoveredCell.set({ x: x, y: y })
                                 }
                                 onMouseLeave={(e) =>
-                                    setHoveredCell({ x: -1, y: -1 })
+                                    hoveredCell.set({ x: -1, y: -1 })
                                 }
                                 // ref={componentRef}
                             >
@@ -606,8 +620,8 @@ function App() {
                                                     ),
                                                 }[statuses[y][x].get()]
                                             }
-                                            {hoveredCell.x === x &&
-                                                hoveredCell.y === y && (
+                                            {hoveredCell.get().x === x &&
+                                                hoveredCell.get().y === y && (
                                                     <path
                                                         fill={
                                                             {
