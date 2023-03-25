@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Type } from 'typescript';
 import * as vec from 'vectorious';
 var lodash = require('lodash');
 
@@ -7,16 +8,27 @@ export type NGrid = number[][];
 export type SGrid = string[][];
 export type GridSize = [number, number];
 
-export function createGrid([width, height]: GridSize): Grid {
-    const grid = new Array(height)
-        .fill(0)
-        .map(() => new Array(width).fill(false));
-    return grid;
+type TypeName = boolean | number | string;
+type ObjectType<T> = T extends boolean
+    ? Grid
+    : T extends number
+    ? NGrid
+    : T extends string
+    ? SGrid
+    : never;
+
+export function createGrid<T extends TypeName>(
+    [width, height]: GridSize,
+    init: T,
+): ObjectType<T> {
+    return Array.from({ length: height }, () =>
+        Array.from({ length: width }, () => init),
+    ) as Grid | NGrid | SGrid as ObjectType<T>;
 }
 
-export function linealiseGrid(grid: Grid): boolean[] {
-    return grid.reduce((acc, row) => [...acc, ...row], []);
-}
+// export function linealiseGrid(grid: Grid): boolean[] {
+//     return grid.reduce((acc, row) => [...acc, ...row], []);
+// }
 
 export function unlinealiseGrid(
     grid: boolean[],
@@ -46,43 +58,43 @@ export function shuffle(array: boolean[]) {
     return array;
 }
 
-export function iterate(
-    grid: NGrid,
-    fn: (x: number, y: number, value: number) => void,
-) {
-    grid.forEach((row, y) => {
-        row.forEach((cell, x) => {
-            fn(x, y, cell);
-        });
-    });
-}
+// export function iterate(
+//     grid: NGrid,
+//     fn: (x: number, y: number, value: number) => void,
+// ) {
+//     grid.forEach((row, y) => {
+//         row.forEach((cell, x) => {
+//             fn(x, y, cell);
+//         });
+//     });
+// }
 
-export const useContainerDimensions = (myRef: any) => {
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+// export const useContainerDimensions = (myRef: any) => {
+//     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
-    useEffect(() => {
-        const getDimensions = () => ({
-            width: myRef.current.offsetWidth,
-            height: myRef.current.offsetHeight,
-        });
+//     useEffect(() => {
+//         const getDimensions = () => ({
+//             width: myRef.current.offsetWidth,
+//             height: myRef.current.offsetHeight,
+//         });
 
-        const handleResize = () => {
-            setDimensions(getDimensions());
-        };
+//         const handleResize = () => {
+//             setDimensions(getDimensions());
+//         };
 
-        if (myRef.current) {
-            setDimensions(getDimensions());
-        }
+//         if (myRef.current) {
+//             setDimensions(getDimensions());
+//         }
 
-        window.addEventListener('resize', handleResize);
+//         window.addEventListener('resize', handleResize);
 
-        return () => {
-            window.removeEventListener('resize', handleResize);
-        };
-    }, [myRef]);
+//         return () => {
+//             window.removeEventListener('resize', handleResize);
+//         };
+//     }, [myRef]);
 
-    return dimensions;
-};
+//     return dimensions;
+// };
 
 export function solver(
     [_width, _height]: [number, number],
@@ -90,8 +102,6 @@ export function solver(
     _neighbors: NGrid,
     _statuses: SGrid,
 ) {
-    // console.log(_width, _height, _bombs, _neighbors, _statuses);
-
     var rowList: { x: number; y: number; n: { x: number; y: number }[] }[] = [];
     var rowNs: number[][] = [];
 
@@ -184,6 +194,7 @@ export function solver(
             }
         });
     });
+
     // console.table(
     //     new vec.NDArray(m, {
     //         shape: [rowList.length, colList.length + 1],
@@ -210,8 +221,6 @@ export function solver(
             let negOnes = row
                 .map((e: number, i: number) => (e === -1 ? i : -1))
                 .filter((x) => x !== -1);
-
-            // console.warn(row, aug, ones, negOnes);
 
             if (aug === 1 && ones.length === 1 && negOnes.length === 0) {
                 let colIndex = row.findIndex((e: number) => e === 1);
@@ -291,7 +300,7 @@ export function solver(
             .filter((e) => e.x !== -69 && e.y !== -69),
     );
 
-    console.log('finished');
+    // console.log('finished');
 
     return { bombs, safe };
 }

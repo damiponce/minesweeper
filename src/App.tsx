@@ -2,64 +2,46 @@ import React from 'react';
 import './App.css';
 import PrismaZoom from 'react-prismazoom';
 import * as lib from './components/lib';
-import { useContainerDimensions } from './components/lib';
 import { svgs } from './components/svgs';
-import { useHookstate } from '@hookstate/core';
+import { hookstate, useHookstate, State } from '@hookstate/core';
 var lodash = require('lodash');
 
-const WIDTH = 10;
-const HEIGHT = 10;
+/*  ˅˅˅  CONSTANTS  ˅˅˅  */
+const WIDTH = 15;
+const HEIGHT = 15;
 const SCALE = 0.5;
 const PERCENTAGE = 0.2; //0.3
 const NBOMBS = Math.round(WIDTH * HEIGHT * PERCENTAGE); // 20% of WIDTH * HEIGHT
 
-// const BOMBS = Array.from({ length: WIDTH }, () =>
-//     Array.from({ length: HEIGHT }, () => 0),
-// );
+const SEP_WIDTH: number = 8; // better if even number
+const SEP_HEIGHT: string = '60%';
+const SEP_COLOR: string = '#384751';
+/*  ˄˄˄  CONSTANTS  ˄˄˄  */
 
-const _bombs = lib.createGrid([WIDTH, HEIGHT]);
-
-const _neighbors: lib.NGrid = Array.from({ length: HEIGHT }, () =>
-    Array.from({ length: WIDTH }, () => 0),
-);
-
-const _status: lib.SGrid = Array.from({ length: HEIGHT }, () =>
-    Array.from({ length: WIDTH }, () => {
-        return 'hidden';
-    }),
-);
-
-const _borders = Array.from({ length: HEIGHT }, () =>
-    Array.from({ length: WIDTH }, () => {
-        return 'none';
-    }),
-);
-
-// console.log('Bombs');
-// console.log(BOMBS);
-// console.log('NEIGHBORS');
-// console.log(_neighbors);
-// console.log('status');
-// console.log(_status);
+/*  ˅˅˅  INIT ARRAYS  ˅˅˅  */
+const _bombs = lib.createGrid([WIDTH, HEIGHT], false);
+const _neighbors: lib.NGrid = lib.createGrid([WIDTH, HEIGHT], 0);
+const _status: lib.SGrid = lib.createGrid([WIDTH, HEIGHT], 'hidden');
+const _borders = lib.createGrid([WIDTH, HEIGHT], 'none');
+/*  ˄˄˄  INIT ARRAYS  ˄˄˄  */
 
 function App() {
-    // const [bombs, setBombs] = React.useState(_bombs);
     const bombs = useHookstate(_bombs);
-    // const [neighbors, setNeighbors] = React.useState(_neighbors);
     const neighbors = useHookstate(_neighbors);
-    // const [statuses, setStatuses] = React.useState(_status);
     const statuses = useHookstate(_status);
-    // const [generated, setGenerated] = React.useState(false);
     const generated = useHookstate(false);
+    const cleared = React.useRef<{ x: number; y: number }[]>([
+        { x: -1, y: -1 },
+    ]);
+    const [hoveredCell, setHoveredCell] = React.useState({ x: 0, y: 0 });
+
+    const clicking = React.useRef(false);
+    const canvas = React.useRef({ posX: 0, posY: 0 });
+    const lastCanvas = React.useRef({ posX: 0, posY: 0 });
+
     const borders = React.useMemo(() => {
         statuses.get().map((row, y) =>
             row?.map((status, x) => {
-                // let color = {
-                //     hidden: '#41A3CD',
-                //     flagged: '#808F9E',
-                //     revealed: '#0000',
-                // }[status];
-
                 const equal = (x: number, y: number) =>
                     statuses[y][x].get() === status;
 
@@ -116,15 +98,6 @@ function App() {
         );
         return _borders;
     }, [statuses.get()]);
-    const cleared = React.useRef<{ x: number; y: number }[]>([
-        { x: -1, y: -1 },
-    ]);
-
-    const clicking = React.useRef(false);
-    const canvas = React.useRef({ posX: 0, posY: 0 });
-    const lastCanvas = React.useRef({ posX: 0, posY: 0 });
-
-    const [hoveredCell, setHoveredCell] = React.useState({ x: 0, y: 0 });
 
     const handleClick = (
         x: number,
@@ -132,37 +105,14 @@ function App() {
         e: React.MouseEvent<HTMLDivElement, MouseEvent>,
     ) => {
         e.preventDefault();
-        // console.warn('click', x, y);
         if (!generated.get()) {
             if (e.button === 0) {
                 let startStatuses: lib.SGrid = [];
                 while (true) {
-                    // console.log(bombs.get());
-                    // console.log(neighbors.get());
-                    // console.log(statuses.get());
+                    let data = handleFirstClick(x, y);
 
-                    // console.error(statuses.get());
-                    // console.error(startStatuses);
-                    handleFirstClick(x, y);
-                    if (neighbors[y][x].get() === 0) clearBlank(x, y);
-                    else revealCell(x, y);
-                    // startStatuses = JSON.parse(JSON.stringify(statuses.value));
+                    startStatuses = lodash.cloneDeep(data.statuses);
 
-                    var solverBombs: lib.Grid = lodash.cloneDeep(bombs.get());
-
-                    var solverNeighbors: lib.NGrid = lodash.cloneDeep(
-                        neighbors.get(),
-                    );
-
-                    var solverStatuses: lib.SGrid = lodash.cloneDeep(
-                        statuses.get(),
-                    );
-
-                    startStatuses = lodash.cloneDeep(solverStatuses);
-
-                    // console.warn(solverBombs);
-                    // console.warn(solverNeighbors);
-                    // console.warn(solverStatuses);
                     /* =====  SOLVER  ===== */
                     // setTimeout(() => {
                     var solverOutput = {
@@ -177,49 +127,42 @@ function App() {
                         solverOutput.safe = [];
                         solverOutput = lib.solver(
                             [WIDTH, HEIGHT],
-                            // bombs.get() as lib.Grid,
-                            // JSON.parse(JSON.stringify(neighbors.value)),
-                            // statuses.get() as lib.SGrid,
-                            solverBombs,
-                            solverNeighbors,
-                            solverStatuses,
+                            data.bombs,
+                            data.neighbors,
+                            data.statuses,
                         );
-                        // solverOutput.bombs.forEach((e) => toggleFlag(e.x, e.y));
-                        // solverOutput.safe.forEach((e) => revealCell(e.x, e.y));
-
-                        solverOutput.bombs.forEach(
-                            (e) => (solverStatuses[e.y][e.x] = 'flagged'),
+                        solverOutput.bombs.forEach((e) =>
+                            toggleFlag(e.x, e.y, data),
                         );
-                        solverOutput.safe.forEach(
-                            (e) => (solverStatuses[e.y][e.x] = 'revealed'),
+                        solverOutput.safe.forEach((e) =>
+                            revealCell(e.x, e.y, data),
                         );
                     }
                     // }, 0);
                     /* =====  SOLVER  ===== */
-                    // console.error(statuses.value);
-                    // console.error(startStatuses);
 
                     var wrong: number = 0;
-                    solverBombs.map((e, y) =>
+                    data.bombs.map((e, y) =>
                         e.map((e, x) => {
                             if (
                                 e === true &&
-                                solverStatuses[y][x] === 'revealed'
+                                data.statuses[y][x] === 'revealed'
                             ) {
                                 wrong += 1;
                             }
                         }),
                     );
-                    console.error(
-                        'Any hidden: ',
-                        solverStatuses.flat().includes('hidden'),
-                        '  Any bombs revealed:',
-                        !!wrong,
-                    );
-                    // break;
-                    // debugger;
-                    if (!solverStatuses.flat().includes('hidden') && !wrong) {
+                    // console.error(
+                    //     'Any hidden: ',
+                    //     data.statuses.flat().includes('hidden'),
+                    //     '  Any bombs revealed:',
+                    //     !!wrong,
+                    // );
+                    if (!data.statuses.flat().includes('hidden') && !wrong) {
+                        bombs.set(data.bombs);
+                        neighbors.set(data.neighbors);
                         statuses.set(startStatuses);
+                        generated.set(true);
                         break;
                     }
                 }
@@ -233,21 +176,6 @@ function App() {
             }
         }
     };
-
-    React.useEffect(() => {
-        console.log('BOMBS CHANGED');
-        console.table(bombs.get());
-    }, [bombs]);
-
-    React.useEffect(() => {
-        console.log('NEIGHBORS CHANGED');
-        console.table(neighbors.get());
-    }, [neighbors]);
-
-    React.useEffect(() => {
-        console.log('STATUSES CHANGED');
-        console.table(statuses.get());
-    }, [statuses]);
 
     const handleMouseDown = (
         x: number,
@@ -273,64 +201,53 @@ function App() {
         }
     };
 
-    // function toggleFlag(x: number, y: number) {
-    //     let tempStatus = [...statuses];
-    //     if (tempStatus[y][x] === 'flagged') tempStatus[y][x] = 'hidden';
-    //     else if (tempStatus[y][x] === 'hidden') tempStatus[y][x] = 'flagged';
-    //     setStatuses(tempStatus);
-    // }
-
-    function toggleFlag(x: number, y: number) {
-        if (statuses[y][x].get() === 'flagged') statuses[y][x].set('hidden');
-        else if (statuses[y][x].get() === 'hidden')
-            statuses[y][x].set('flagged');
+    function toggleFlag(
+        x: number,
+        y: number,
+        data?: { bombs: lib.Grid; neighbors: lib.NGrid; statuses: lib.SGrid },
+    ) {
+        let _data = data ? data.statuses[y][x] : statuses[y][x].get();
+        if (_data === 'flagged')
+            data
+                ? (data.statuses[y][x] = 'hidden')
+                : statuses[y][x].set('hidden');
+        else if (_data === 'hidden')
+            data
+                ? (data.statuses[y][x] = 'flagged')
+                : statuses[y][x].set('flagged');
     }
 
-    // function revealCell(x: number, y: number) {
-    //     let tempStatus = [...statuses];
-    //     if (tempStatus[y][x] === 'hidden') {
-    //         tempStatus[y][x] = 'revealed';
-    //         setStatuses(tempStatus);
-    //     }
-    // }
-
-    function revealCell(x: number, y: number) {
-        if (statuses[y][x].get() === 'hidden') {
-            statuses[y][x].set('revealed');
+    function revealCell(
+        x: number,
+        y: number,
+        data?: { bombs: lib.Grid; neighbors: lib.NGrid; statuses: lib.SGrid },
+    ) {
+        if (data ? data.statuses[y][x] : statuses[y][x].get() === 'hidden') {
+            data
+                ? (data.statuses[y][x] = 'revealed')
+                : statuses[y][x].set('revealed');
         }
     }
 
-    function clearBlank(x: number, y: number) {
-        if (
-            neighbors[y][x].get() !== 0 ||
-            cleared.current.find((e) => e.x === x && e.y === y)
-        )
+    function clearBlank(
+        x: number,
+        y: number,
+        data?: { bombs: lib.Grid; neighbors: lib.NGrid; statuses: lib.SGrid },
+    ) {
+        let _data = data ? data.neighbors[y][x] : neighbors[y][x].get();
+        if (_data !== 0 || cleared.current.find((e) => e.x === x && e.y === y))
             return;
-        clearAround(x, y);
-        checkSurroundings(x, y).forEach(({ x, y }) => clearBlank(x, y));
+        clearAround(x, y, data);
+        checkSurroundings(x, y, data).forEach(({ x, y }) =>
+            clearBlank(x, y, data),
+        );
     }
 
-    // function clearAround(x: number, y: number) {
-    //     let tempStatus = [...statuses];
-    //     for (var i = -1; i <= 1; i++) {
-    //         for (var j = -1; j <= 1; j++) {
-    //             if (
-    //                 x + i >= 0 &&
-    //                 x + i < WIDTH &&
-    //                 y + j >= 0 &&
-    //                 y + j < HEIGHT
-    //             ) {
-    //                 if (tempStatus[y + j][x + i] === 'hidden')
-    //                     tempStatus[y + j][x + i] = 'revealed';
-    //             }
-    //         }
-    //     }
-    //     setStatuses(tempStatus);
-    //     if (!cleared.current.find((e) => e.x === x && e.y === y))
-    //         cleared.current.push({ x: x, y: y });
-    // }
-
-    function clearAround(x: number, y: number) {
+    function clearAround(
+        x: number,
+        y: number,
+        data?: { bombs: lib.Grid; neighbors: lib.NGrid; statuses: lib.SGrid },
+    ) {
         for (var i = -1; i <= 1; i++) {
             for (var j = -1; j <= 1; j++) {
                 if (
@@ -339,18 +256,26 @@ function App() {
                     y + j >= 0 &&
                     y + j < HEIGHT
                 ) {
-                    if (statuses[y + j][x + i].get() === 'hidden')
-                        statuses[y + j][x + i].set('revealed');
+                    let _data = data
+                        ? data.statuses[y + j][x + i]
+                        : statuses[y + j][x + i].get();
+
+                    if (_data === 'hidden')
+                        data
+                            ? (data.statuses[y + j][x + i] = 'revealed')
+                            : statuses[y + j][x + i].set('revealed');
                 }
             }
         }
-        if (!cleared.current.find((e) => e.x === x && e.y === y))
+        if (!cleared.current.includes({ x: x, y: y })) {
             cleared.current.push({ x: x, y: y });
+        }
     }
 
     function checkSurroundings(
         x: number,
         y: number,
+        data?: { bombs: lib.Grid; neighbors: lib.NGrid; statuses: lib.SGrid },
     ): { x: number; y: number }[] {
         var emptyCells: { x: number; y: number }[] = [];
         for (var i = -1; i <= 1; i++) {
@@ -362,7 +287,9 @@ function App() {
                     y + j < HEIGHT
                 ) {
                     if (
-                        neighbors[y + j][x + i].get() === 0 &&
+                        (data
+                            ? data.neighbors[y + j][x + i]
+                            : neighbors[y + j][x + i].get()) === 0 &&
                         (i !== 0 || j !== 0)
                     )
                         emptyCells.push({ x: x + i, y: y + j });
@@ -373,16 +300,7 @@ function App() {
     }
 
     const handleFirstClick = (x: number, y: number) => {
-        console.log('handleFirstClick');
-        bombs.set(_bombs);
-        neighbors.set(_neighbors);
-        statuses.set(_status);
-
-        // var _ = bombs;
-        // var __ = neighbors;
-        // var ___ = statuses;
-
-        // debugger;
+        cleared.current = [{ x: -1, y: -1 }];
 
         var tempBombArr = Array.from({ length: WIDTH * HEIGHT }, (_, i) =>
             i < NBOMBS ? true : false,
@@ -390,16 +308,14 @@ function App() {
 
         let pass = false;
 
-        var neigh = JSON.parse(JSON.stringify(neighbors.value));
+        var neigh: lib.NGrid = lodash.cloneDeep(neighbors.value);
+        var tempBombs: lib.Grid = [];
         while (!pass) {
-            var tempBombs = lib.unlinealiseGrid(lib.shuffle(tempBombArr), [
+            tempBombs = lib.unlinealiseGrid(lib.shuffle(tempBombArr), [
                 WIDTH,
                 HEIGHT,
             ]);
-            // console.log('temp -> neigh');
-            // console.log(tempBombs);
-            // console.log(neigh);
-            bombs.set(tempBombs);
+
             for (var m = 0; m < WIDTH; m++) {
                 for (var n = 0; n < HEIGHT; n++) {
                     var sum = 0;
@@ -411,7 +327,6 @@ function App() {
                                 n + j >= 0 &&
                                 n + j < HEIGHT
                             ) {
-                                // debugger;
                                 if (tempBombs[n + j][m + i]) sum++;
                             }
                         }
@@ -428,14 +343,15 @@ function App() {
                 pass = true;
             }
         }
-        neighbors.set(neigh);
-        generated.set(true);
 
-        // var ____ = bombs;
-        // var _____ = neighbors;
-        // var ______ = statuses;
+        let data = {
+            bombs: tempBombs,
+            neighbors: neigh,
+            statuses: lodash.cloneDeep(statuses.value),
+        };
+        clearBlank(x, y, data);
 
-        // debugger;
+        return data;
     };
 
     React.useEffect(() => {
@@ -457,104 +373,9 @@ function App() {
         };
     }, []);
 
-    const componentRef = React.useRef(null);
-    const { width, height } = useContainerDimensions(componentRef);
-
-    /*
-    React.useEffect(() => {
-        // console.error(statuses);
-        statuses.map((row, y) =>
-            row?.map((status, x) => {
-                let color = {
-                    hidden: '#41A3CD',
-                    flagged: '#808F9E',
-                    revealed: '#0000',
-                }[status];
-
-                const equal = (x: number, y: number, x0: number, y0: number) =>
-                    statuses[y][x] === statuses[y0][x0];
-
-                borders.current[y][x] = `${
-                    x < WIDTH
-                        ? equal(x, y, x + 1, y)
-                            ? `${width * 0.0825}px 0px 0px ${color}`
-                            : '0 0 #0000'
-                        : '0 0 #0000'
-                }, ${
-                    x > 0
-                        ? equal(x, y, x - 1, y)
-                            ? `-${width * 0.0825}px 0px 0px ${color}`
-                            : '0 0 #0000'
-                        : '0 0 #0000'
-                }, ${
-                    y < HEIGHT - 1
-                        ? equal(x, y, x, y + 1)
-                            ? `0px ${height * 0.0825}px 0px ${color}`
-                            : '0 0 #0000'
-                        : '0 0 #0000'
-                }, ${
-                    y > 0
-                        ? equal(x, y, x, y - 1)
-                            ? `0px -${height * 0.0825}px 0px ${color}`
-                            : '0 0 #0000'
-                        : '0 0 #0000'
-                }, ${
-                    y > 0 && x > 0
-                        ? equal(x, y, x - 1, y - 1) &&
-                          equal(x, y, x - 1, y) &&
-                          equal(x, y, x, y - 1)
-                            ? `-${height * 0.0825}px -${
-                                  height * 0.0825
-                              }px 0px ${color}`
-                            : '0 0 #0000'
-                        : '0 0 #0000'
-                }, ${
-                    y < HEIGHT - 1 && x < WIDTH
-                        ? equal(x, y, x + 1, y + 1) &&
-                          equal(x, y, x + 1, y) &&
-                          equal(x, y, x, y + 1)
-                            ? `${height * 0.0825}px ${
-                                  height * 0.0825
-                              }px 0px ${color}`
-                            : '0 0 #0000'
-                        : '0 0 #0000'
-                }, ${
-                    y > 0 && x < WIDTH
-                        ? equal(x, y, x + 1, y - 1) &&
-                          equal(x, y, x + 1, y) &&
-                          equal(x, y, x, y - 1)
-                            ? `${height * 0.0825}px -${
-                                  height * 0.0825
-                              }px 0px ${color}`
-                            : '0 0 #0000'
-                        : '0 0 #0000'
-                }, ${
-                    y < HEIGHT - 1 && x > 0
-                        ? equal(x, y, x - 1, y + 1) &&
-                          equal(x, y, x - 1, y) &&
-                          equal(x, y, x, y + 1)
-                            ? `-${height * 0.0825}px ${
-                                  height * 0.0825
-                              }px 0px ${color}`
-                            : '0 0 #0000'
-                        : '0 0 #0000'
-                }`;
-            }),
-        );
-    }, [statuses]);
-    */
-
-    React.useEffect(() => {
-        // console.error(borders);
-        // console.log(borders[0][0]);
-        // console.warn((svgs as any)[borders[0][0]]);
-        // console.log();
-    }, [borders]);
-
     return (
         <div className='App' style={{ width: '100%', height: '100%' }}>
             <div
-                // hidden
                 style={{
                     position: 'absolute',
                     width: 80,
@@ -583,7 +404,7 @@ function App() {
                 style={{
                     width: '100%',
                     height: '100%',
-                    backgroundColor: '#000',
+                    backgroundColor: '#0D151D',
                     alignItems: 'center',
                     justifyContent: 'center',
                     display: 'flex',
@@ -597,6 +418,70 @@ function App() {
                 }}
             >
                 <div
+                    key='separator-grid'
+                    id='separator-grid'
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: `repeat(${WIDTH}, 1fr)`,
+                        gridTemplateRows: `repeat(${HEIGHT}, 1fr)`,
+                        aspectRatio: WIDTH / HEIGHT,
+                        maxWidth:
+                            (Math.min(window.innerWidth, window.innerHeight) -
+                                24) *
+                            5,
+                        maxHeight:
+                            (Math.min(window.innerWidth, window.innerHeight) -
+                                24) *
+                            5,
+                        width: WIDTH / HEIGHT >= 1 ? `calc(100% * 5)` : 'auto',
+                        height: WIDTH / HEIGHT < 1 ? `calc(100% * 5)` : 'auto',
+                        margin: 0,
+                        position: 'absolute',
+                        transform: `scale3d(0.2,0.2,1)`,
+                    }}
+                >
+                    {Array.from({ length: HEIGHT }, () =>
+                        Array.from({ length: WIDTH }, () => 0),
+                    ).map((row, y) =>
+                        row?.map((bomb, x) => (
+                            <div
+                                style={{
+                                    position: 'relative',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                }}
+                            >
+                                {x > 0 && (
+                                    <div
+                                        style={{
+                                            position: 'absolute',
+                                            width: SEP_WIDTH,
+                                            left: -SEP_WIDTH / 2,
+                                            height: SEP_HEIGHT,
+                                            backgroundColor: SEP_COLOR,
+                                            borderRadius: SEP_WIDTH / 2,
+                                        }}
+                                    />
+                                )}
+                                {y > 0 && (
+                                    <div
+                                        style={{
+                                            position: 'absolute',
+                                            width: SEP_HEIGHT,
+                                            top: -SEP_WIDTH / 2,
+                                            height: SEP_WIDTH,
+                                            backgroundColor: SEP_COLOR,
+                                            borderRadius: SEP_WIDTH / 2,
+                                        }}
+                                    />
+                                )}
+                            </div>
+                        )),
+                    )}
+                </div>
+                <div
+                    key='grid'
                     id='grid'
                     style={{
                         display: 'grid',
@@ -625,7 +510,7 @@ function App() {
                                 key={`${x}-${y}`}
                                 id={`${x}-${y}`}
                                 style={{
-                                    backgroundColor: '#0D151D',
+                                    // backgroundColor: '#0D151D',
                                     cursor: 'pointer',
                                     position: 'relative',
                                     justifyContent: 'center',
@@ -643,7 +528,7 @@ function App() {
                                 onMouseLeave={(e) =>
                                     setHoveredCell({ x: -1, y: -1 })
                                 }
-                                ref={componentRef}
+                                // ref={componentRef}
                             >
                                 {
                                     <div
@@ -721,6 +606,25 @@ function App() {
                                                     ),
                                                 }[statuses[y][x].get()]
                                             }
+                                            {hoveredCell.x === x &&
+                                                hoveredCell.y === y && (
+                                                    <path
+                                                        fill={
+                                                            {
+                                                                hidden: '#0004',
+                                                                flagged:
+                                                                    '#0004',
+                                                                revealed:
+                                                                    '#fff2',
+                                                            }[
+                                                                statuses[y][
+                                                                    x
+                                                                ].get()
+                                                            ]
+                                                        }
+                                                        d='M83.5,8.25H16.5c-4.56,0-8.25,3.69-8.25,8.25V83.5c0,4.56,3.69,8.25,8.25,8.25H83.5c4.56,0,8.25-3.69,8.25-8.25V16.5c0-4.56-3.69-8.25-8.25-8.25Z'
+                                                    />
+                                                )}
                                         </svg>
                                     </div>
                                 }
