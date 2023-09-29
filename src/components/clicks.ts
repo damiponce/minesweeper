@@ -12,7 +12,7 @@ export const handleClick = (
 
     e.preventDefault();
     if (!state.generated.get()) {
-        if (e.button === 0) {
+        if (e.button === (settings.switchClicks.get() ? 2 : 0)) {
             let startStatuses: lib.SGrid = [];
             while (true) {
                 let data = handleFirstClick(x, y);
@@ -71,12 +71,12 @@ export const handleClick = (
             }
         }
     } else {
-        if (e.button === 0) {
+        if (e.button === (settings.switchClicks.get() ? 2 : 0)) {
             if (state.neighbors[y][x].get() === 0) clearBlank(x, y);
             else revealCell(x, y);
         } else if (e.button === 1) {
             clearTrivial(x, y);
-        } else if (e.button === 2) {
+        } else if (e.button === (settings.switchClicks.get() ? 0 : 2)) {
             toggleFlag(x, y);
         }
     }
